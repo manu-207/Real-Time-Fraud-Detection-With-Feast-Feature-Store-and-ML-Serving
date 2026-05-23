@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.env
+
+# Data & Models (tracked separately or generated)
+data/raw/
+data/processed/
+models/
+reports/
+mlruns/
+
+# Feast
+feature_repo/data/*.parquet
+feature_repo/data/registry.db
+feature_repo/data/online_store.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/

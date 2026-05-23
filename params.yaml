@@ -1,0 +1,34 @@
+data:
+  raw_path: data/raw/creditcard.csv
+  processed_path: data/processed/features.parquet
+  test_size: 0.2
+  random_state: 42
+
+features:
+  entity_column: transaction_id
+  timestamp_column: event_timestamp
+  target: is_fraud
+
+train:
+  model_path: models/model.json
+  random_state: 42
+  xgboost:
+    n_estimators: 200
+    max_depth: 6
+    learning_rate: 0.1
+    scale_pos_weight: 50  # handle class imbalance (fraud is rare)
+    eval_metric: aucpr
+    early_stopping_rounds: 10
+    subsample: 0.8
+    colsample_bytree: 0.8
+
+serving:
+  host: 0.0.0.0
+  port: 8000
+  feast_repo_path: feature_repo
+  model_path: models/model.json
+
+monitoring:
+  drift_check_every: 100
+  reference_data_path: data/processed/features.parquet
+  report_dir: reports
