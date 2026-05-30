@@ -2,16 +2,6 @@
 # ══════════════════════════════════════════════════════════════════════════════
 #  Install Redis + MLflow on EC2 (Ubuntu 22.04 / Amazon Linux 2023)
 # ══════════════════════════════════════════════════════════════════════════════
-#
-#  Usage:
-#    chmod +x scripts/install_redis_mlflow.sh
-#    ./scripts/install_redis_mlflow.sh
-#
-#  After running:
-#    Redis  → localhost:6379
-#    MLflow → http://<ec2-public-ip>:5000
-#
-# ══════════════════════════════════════════════════════════════════════════════
 
 set -e
 
@@ -58,27 +48,50 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
     sudo apt-get install -y redis-server
 elif [[ "$OS" == "amzn" ]]; then
-    # Amazon Linux 2023
     sudo yum install -y redis6 || sudo amazon-linux-extras install redis6 -y || sudo yum install -y redis
 elif [[ "$OS" == "rhel" || "$OS" == "centos" ]]; then
     sudo yum install -y epel-release
     sudo yum install -y redis
 fi
 
-# Configure Redis to accept connections from the API container/app
-sudo sed -i 's/^bind 127.0.0.1.*/bind 0.0.0.0/' /etc/redis/redis.conf 2>/dev/null || \
-sudo sed -i 's/^bind 127.0.0.1.*/bind 0.0.0.0/' /etc/redis.conf 2>/dev/null || true
+# ── FIX 1: Correctly locate redis.conf on Ubuntu 22.04 ───────────────────────
+# Ubuntu 22.04 uses /etc/redis/redis.conf
+# Amazon Linux / CentOS use /etc/redis.conf
+# Try both paths; also handle the protected-mode line that blocks remote connections
+REDIS_CONF=""
+if [ -f /etc/redis/redis.conf ]; then
+    REDIS_CONF="/etc/redis/redis.conf"
+elif [ -f /etc/redis.conf ]; then
+    REDIS_CONF="/etc/redis.conf"
+fi
 
-# Enable and start Redis
-sudo systemctl enable redis || sudo systemctl enable redis-server
-sudo systemctl start redis || sudo systemctl start redis-server
+if [ -n "$REDIS_CONF" ]; then
+    echo "  [redis] Config found at: $REDIS_CONF"
+    # Change bind from 127.0.0.1 to 0.0.0.0
+    sudo sed -i 's/^bind 127.0.0.1 -::1/bind 0.0.0.0/' "$REDIS_CONF"
+    sudo sed -i 's/^bind 127.0.0.1$/bind 0.0.0.0/' "$REDIS_CONF"
+    # Disable protected-mode so external connections are allowed
+    sudo sed -i 's/^protected-mode yes/protected-mode no/' "$REDIS_CONF"
+    echo "  [redis] bind set to 0.0.0.0, protected-mode disabled"
+else
+    echo "  ⚠ redis.conf not found — skipping bind config"
+fi
 
-# Verify
+# ── FIX 2: Correct service name on Ubuntu 22.04 is redis-server ──────────────
+if [[ "$OS" == "ubuntu" || "$OS" == "debian" ]]; then
+    REDIS_SERVICE="redis-server"
+else
+    REDIS_SERVICE="redis"
+fi
+
+sudo systemctl enable "$REDIS_SERVICE"
+sudo systemctl restart "$REDIS_SERVICE"
+
 sleep 2
 if redis-cli ping | grep -q "PONG"; then
     echo "  ✓ Redis installed and running on port 6379"
 else
-    echo "  ✗ Redis failed to start. Check: sudo systemctl status redis"
+    echo "  ✗ Redis failed to start. Check: sudo systemctl status $REDIS_SERVICE"
     exit 1
 fi
 echo ""
@@ -90,18 +103,17 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "  [3/6] Installing MLflow"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Install MLflow with pip
-pip3 install --user mlflow==2.13.0 boto3
-
-# Add local bin to PATH if not already there
+# ── FIX 3: Export PATH *before* pip install so 'which mlflow' works after ─────
 export PATH="$HOME/.local/bin:$PATH"
 if ! grep -q '.local/bin' ~/.bashrc; then
     echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 fi
 
-# Verify
+pip3 install --user mlflow==2.13.0 boto3
+
+# Verify (PATH is already exported above)
 if mlflow --version; then
-    echo "  ✓ MLflow installed"
+    echo "  ✓ MLflow installed: $(mlflow --version)"
 else
     echo "  ✗ MLflow installation failed"
     exit 1
@@ -115,8 +127,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "  [4/6] Setting up MLflow storage"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-sudo mkdir -p /opt/mlflow/{db,artifacts}
-sudo chown -R $USER:$USER /opt/mlflow
+sudo mkdir -p /opt/mlflow/db /opt/mlflow/artifacts
+sudo chown -R "$USER":"$USER" /opt/mlflow
 echo "  ✓ MLflow directories created at /opt/mlflow/"
 echo ""
 
@@ -127,8 +139,16 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "  [5/6] Creating MLflow systemd service"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-MLFLOW_BIN=$(which mlflow || echo "$HOME/.local/bin/mlflow")
+# ── FIX 4: Resolve MLFLOW_BIN after PATH is exported ─────────────────────────
+MLFLOW_BIN="$HOME/.local/bin/mlflow"
+if [ ! -f "$MLFLOW_BIN" ]; then
+    MLFLOW_BIN=$(which mlflow)
+fi
+echo "  [mlflow] Binary path: $MLFLOW_BIN"
 
+# ── FIX 5: sqlite URI needs 4 slashes for absolute path (/opt/...) ───────────
+# sqlite:////opt/mlflow/db/mlflow.db  ← correct (4 slashes = absolute path)
+# sqlite:///opt/mlflow/db/mlflow.db   ← wrong   (3 slashes = relative path)
 sudo tee /etc/systemd/system/mlflow.service > /dev/null <<EOF
 [Unit]
 Description=MLflow Tracking Server
@@ -138,10 +158,10 @@ After=network.target
 Type=simple
 User=$USER
 WorkingDirectory=/opt/mlflow
-ExecStart=$MLFLOW_BIN server \\
-    --host 0.0.0.0 \\
-    --port 5000 \\
-    --backend-store-uri sqlite:///opt/mlflow/db/mlflow.db \\
+ExecStart=$MLFLOW_BIN server \
+    --host 0.0.0.0 \
+    --port 5000 \
+    --backend-store-uri sqlite:////opt/mlflow/db/mlflow.db \
     --default-artifact-root /opt/mlflow/artifacts
 Restart=always
 RestartSec=5
@@ -155,12 +175,14 @@ sudo systemctl daemon-reload
 sudo systemctl enable mlflow
 sudo systemctl start mlflow
 
-# Wait for MLflow to start
-sleep 3
-if curl -s http://localhost:5000/health | grep -q "OK" 2>/dev/null || curl -s -o /dev/null -w "%{http_code}" http://localhost:5000 | grep -q "200"; then
+# Wait longer — MLflow takes a few seconds to initialise the SQLite DB
+sleep 6
+
+if curl -s -o /dev/null -w "%{http_code}" http://localhost:5000 | grep -q "200"; then
     echo "  ✓ MLflow running on port 5000"
 else
-    echo "  ⚠ MLflow may still be starting. Check: sudo systemctl status mlflow"
+    echo "  ⚠ MLflow may still be starting. Checking status..."
+    sudo systemctl status mlflow --no-pager || true
 fi
 echo ""
 
@@ -170,16 +192,15 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  [6/6] Security Group Configuration"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
 echo ""
 echo "  ⚠ IMPORTANT: Open these ports in your EC2 Security Group:"
 echo ""
 echo "  ┌──────────┬──────────┬─────────────────────────────┐"
 echo "  │ Port     │ Protocol │ Purpose                     │"
 echo "  ├──────────┼──────────┼─────────────────────────────┤"
-echo "  │ 6379     │ TCP      │ Redis                       │"
 echo "  │ 5000     │ TCP      │ MLflow UI                   │"
-echo "  │ 8000     │ TCP      │ FastAPI (if running here)   │"
+echo "  │ 8000     │ TCP      │ FastAPI                     │"
+echo "  │ 6379     │ TCP      │ Redis (restrict to your IP) │"
 echo "  └──────────┴──────────┴─────────────────────────────┘"
 echo ""
 echo "  AWS Console → EC2 → Security Groups → Inbound Rules → Edit"
@@ -195,18 +216,18 @@ echo "  ✅ Installation Complete!"
 echo "═══════════════════════════════════════════════════════"
 echo ""
 echo "  Services:"
-echo "    Redis  → redis://$PUBLIC_IP:6379"
+echo "    Redis  → redis://localhost:6379"
 echo "    MLflow → http://$PUBLIC_IP:5000"
 echo ""
-echo "  Useful commands:"
-echo "    redis-cli ping                    # test Redis"
-echo "    sudo systemctl status redis       # Redis status"
-echo "    sudo systemctl status mlflow      # MLflow status"
-echo "    sudo journalctl -u mlflow -f      # MLflow logs"
+echo "  Verify:"
+echo "    redis-cli ping                         # PONG"
+echo "    sudo systemctl status $REDIS_SERVICE"
+echo "    sudo systemctl status mlflow"
+echo "    sudo journalctl -u mlflow -f           # live logs"
 echo ""
-echo "  Set in your .env file:"
-echo "    REDIS_HOST=$PUBLIC_IP"
+echo "  .env values:"
+echo "    REDIS_HOST=localhost"
 echo "    REDIS_PORT=6379"
-echo "    MLFLOW_TRACKING_URI=http://$PUBLIC_IP:5000"
+echo "    MLFLOW_TRACKING_URI=http://localhost:5000"
 echo ""
 echo "═══════════════════════════════════════════════════════"
