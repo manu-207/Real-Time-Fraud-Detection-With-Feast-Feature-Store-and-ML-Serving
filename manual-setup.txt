@@ -1,0 +1,28 @@
+
+cd fraud-detection
+python3 --version   # confirm 3.10.x
+
+python3 -m venv venv
+source venv/bin/activate
+
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install --upgrade pip
+pip install -r requirements.txt
+mkdir -p data/raw data/processed models reports
+mkdir -p data/raw data/processed feature_repo/data models reports
+
+# Step 1 - Data Preparation
+python src/data_prep.py
+
+# Step 2 - Feature Engineering (creates data/features.parquet)
+python src/feature_engineering.py
+
+# Step 3 - Now run feast
+feast -c feature_repo apply
+feast -c feature_repo materialize-incremental "$(date -u +"%Y-%m-%dT%H:%M:%S")"
+
+
+ls -lh data/processed/features.parquet
+ls -lh feature_repo/data/features.parquet
+
