@@ -9,6 +9,12 @@ from datetime import timedelta
 from feast import Entity, FeatureView, Field, FileSource
 from feast.types import Float32, Int64
 
+import os
+
+# Use absolute path to avoid Feast's inconsistent relative path resolution
+_REPO_DIR = os.path.dirname(os.path.abspath(__file__))
+_PARQUET_PATH = os.path.join(_REPO_DIR, "data", "features.parquet")
+
 # ── Entity: each transaction has a unique ID ──────────────────────────────────
 transaction = Entity(
     name="transaction_id",
@@ -17,7 +23,7 @@ transaction = Entity(
 
 # ── Data Source: parquet file with pre-computed features ──────────────────────
 transaction_source = FileSource(
-    path="feature_repo/data/features.parquet",
+    path=_PARQUET_PATH,
     timestamp_field="event_timestamp",
 )
 
