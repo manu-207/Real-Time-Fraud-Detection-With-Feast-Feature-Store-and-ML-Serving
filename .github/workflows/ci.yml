@@ -8,7 +8,7 @@ on:
 
 env:
   MLFLOW_TRACKING_URI: "file:///tmp/mlruns"
-  MLFLOW_EXPERIMENT_NAME: "fraud-detection-ci"
+  MLFLOW_EXPERIMENT_NAME: "fraud-detection"
   REDIS_HOST: "localhost"
   REDIS_PORT: "6379"
 
