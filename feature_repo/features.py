@@ -17,7 +17,7 @@ transaction = Entity(
 
 # ── Data Source: parquet file with pre-computed features ──────────────────────
 transaction_source = FileSource(
-    path="../data/processed/features.parquet",
+    path="feature_repo/data/features.parquet",
     timestamp_field="event_timestamp",
 )
 
