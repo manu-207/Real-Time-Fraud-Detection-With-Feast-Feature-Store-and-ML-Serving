@@ -60,10 +60,12 @@ def engineer_features():
     # ── Add entity column and timestamp for Feast ─────────────────────────────
     df["transaction_id"] = range(1, len(df) + 1)
 
-    # Create realistic timestamps (spread over 2 days starting from a fixed date)
-    base_time = datetime(2024, 1, 1)
+    # Create realistic timestamps (spread over 2 days ending near current time)
+    # Use recent dates so Feast materialize-incremental picks them up
+    from datetime import datetime as dt_now
+    base_time = dt_now.utcnow() - timedelta(days=1)
     df["event_timestamp"] = df["Time"].apply(
-        lambda t: base_time + timedelta(seconds=float(t))
+        lambda t: base_time + timedelta(seconds=float(t) * (86400 / 172800))
     )
 
     # ── Rename target column ──────────────────────────────────────────────────
