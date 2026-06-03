@@ -26,3 +26,48 @@ feast -c feature_repo materialize-incremental "$(date -u +"%Y-%m-%dT%H:%M:%S")"
 ls -lh data/processed/features.parquet
 ls -lh feature_repo/data/features.parquet
 
+step4:
+python src/train.py
+ls -la models/model.json
+
+step5:
+python src/evaluate.py
+
+step6:
+python src/monitor.py
+
+step7:
+uvicorn serving.app:app --host 0.0.0.0 --port 8000 --reload
+
+step8: test API
+# Health check
+curl http://localhost:8000/health
+
+# Predict (direct features)
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transaction_id": 1,
+    "v1": -1.36, "v2": -0.07, "v3": 2.54, "v4": 1.38,
+    "v5": -0.34, "v6": 0.46, "v7": 0.24, "v8": -0.04,
+    "v9": 0.57, "v10": -0.38, "v11": -0.23, "v12": -0.04,
+    "v13": -0.44, "v14": -0.12, "v15": -0.07, "v16": -0.23,
+    "v17": -0.29, "v18": -0.11, "v19": 0.01, "v20": -0.15,
+    "v21": -0.07, "v22": -0.23, "v23": -0.07, "v24": 0.56,
+    "v25": -0.32, "v26": -0.09, "v27": -0.02, "v28": -0.05,
+    "scaled_amount": 0.24, "scaled_time": -0.99,
+    "hour_of_day": 14, "is_night": 0, "amount_zscore": 0.15
+  }'
+
+# Predict from Feast (features fetched from Redis)
+curl -X POST http://localhost:8000/predict/feast \
+  -H "Content-Type: application/json" \
+  -d '{"transaction_id": 100}'
+
+step9: run pytest
+pytest tests/ -v
+
+
+
+
+
