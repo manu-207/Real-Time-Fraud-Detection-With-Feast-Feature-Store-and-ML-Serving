@@ -49,7 +49,7 @@ WorkingDirectory=/home/ubuntu
 
 Environment="PATH=/home/ubuntu/mlflow-venv/bin:/usr/bin:/bin"
 
-ExecStart=/home/ubuntu/mlflow-venv/bin/mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://manu7-mlops-mlflow-artifacts --host 0.0.0.0 --port 5000 --allowed-hosts * --cors-allowed-origins *
+ExecStart=/home/ubuntu/mlflow-venv/bin/mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root s3://manu7-mlops-mlflow-artifacts-test --host 0.0.0.0 --port 5000 --allowed-hosts * --cors-allowed-origins *
 
 Restart=always
 RestartSec=5
