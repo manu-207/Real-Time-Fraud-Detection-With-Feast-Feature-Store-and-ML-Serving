@@ -67,7 +67,48 @@ curl -X POST http://localhost:8000/predict/feast \
 step9: run pytest
 pytest tests/ -v
 
+# Update packages
+sudo apt-get update
+
+# Install Docker
+sudo apt-get install -y docker.io
+
+# Start and enable Docker
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# Add your user to docker group (so you don't need sudo)
+sudo usermod -aG docker ubuntu
+
+# Apply group change (or logout and login again)
+newgrp docker
+
+# Verify
+docker --version
+docker ps
 
 
 
+# Login to ECR
+aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 309866938066.dkr.ecr.ap-south-1.amazonaws.com
+
+# Build
+docker build -t fraud-detection .
+
+# Tag
+docker tag fraud-detection:latest 309866938066.dkr.ecr.ap-south-1.amazonaws.com/mlops-test:latest
+
+# Push
+docker push 309866938066.dkr.ecr.ap-south-1.amazonaws.com/mlops-test:latest
+
+# Run the container
+docker run -d --name fraud-app -p 8000:8000 -p 8501:8501 fraud-detection
+
+docker run -d --name fraud-app --network host fraud-detection
+
+# Check if it's running
+docker ps
+
+# Check logs
+docker logs fraud-app --tail 20
 
