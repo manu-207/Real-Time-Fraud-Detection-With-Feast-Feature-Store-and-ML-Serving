@@ -1,0 +1,64 @@
+# 1. Install build dependencies
+sudo apt update -y
+sudo apt install -y build-essential zlib1g-dev libncurses5-dev libgdbm-dev libnss3-dev libssl-dev libreadline-dev libffi-dev libsqlite3-dev wget curl libbz2-dev liblzma-dev
+
+# 2. Download Python 3.12
+cd /tmp
+wget https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tgz
+tar -xzf Python-3.12.8.tgz
+cd Python-3.12.8
+
+# 3. Compile and install Python 3.12
+./configure --prefix=/opt/python3.12 --enable-optimizations --with-ensurepip=install
+make -j$(nproc)
+sudo make altinstall
+
+# 4. Verify
+/opt/python3.12/bin/python3.12 --version
+
+# 5. Remove old venv and create new one with Python 3.12
+rm -rf /home/ubuntu/mlflow-venv
+/opt/python3.12/bin/python3.12 -m venv /home/ubuntu/mlflow-venv
+
+# 6. Activate and install MLflow
+source /home/ubuntu/mlflow-venv/bin/activate
+pip install --upgrade pip
+pip install mlflow psycopg2-binary
+mlflow --version
+
+# 7. Create artifact directory
+mkdir -p /home/ubuntu/mlflow-artifacts
+
+# 8. Create systemd service
+sudo tee /etc/systemd/system/mlflow.service > /dev/null <<EOF
+[Unit]
+Description=MLflow Tracking Server
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu
+Environment="PATH=/home/ubuntu/mlflow-venv/bin:/usr/bin:/bin"
+ExecStart=/home/ubuntu/mlflow-venv/bin/mlflow server \
+  --backend-store-uri sqlite:///home/ubuntu/mlflow.db \
+  --default-artifact-root file:///home/ubuntu/mlflow-artifacts \
+  --host 0.0.0.0 \
+  --port 5002 \
+  --allowed-hosts "*" \
+  --cors-allowed-origins "*"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# 9. Start MLflow
+sudo systemctl daemon-reload
+sudo systemctl enable mlflow
+sudo systemctl restart mlflow
+
+# 10. Check status
+sleep 3
+sudo systemctl status mlflow --no-pager
